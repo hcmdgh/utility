@@ -51,3 +51,34 @@ def row_normalize_adj_mat(
     adj_mat = adj_mat.set_value(value_1d, layout='coo')
 
     return adj_mat 
+
+
+def gcn_normalize_adj_mat(
+    adj_mat: SparseTensor,
+) -> SparseTensor:
+    device = adj_mat.device() 
+    n, m = adj_mat.sparse_sizes()
+    nnz = adj_mat.nnz()
+    assert n == m 
+
+    degree_1d = adj_mat.sum(dim=1)
+    assert degree_1d.shape == (n,)
+
+    inv_sqrt_degree_1d = degree_1d.pow(-0.5)
+    torch.nan_to_num_(inv_sqrt_degree_1d, nan=0., posinf=0., neginf=0.)
+    assert inv_sqrt_degree_1d.shape == (n,)
+
+    row_index_1d = adj_mat.storage.row()
+    col_index_1d = adj_mat.storage.col()
+    assert row_index_1d.shape == (nnz,) 
+
+    value_1d = adj_mat.storage.value()
+    if value_1d is None:
+        value_1d = torch.ones(nnz, dtype=torch.float32, device=device)
+    assert value_1d.shape == (nnz,)
+
+    value_1d = value_1d * inv_sqrt_degree_1d[row_index_1d] * inv_sqrt_degree_1d[col_index_1d]
+    
+    adj_mat = adj_mat.set_value(value_1d, layout='coo')
+
+    return adj_mat 
