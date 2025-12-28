@@ -3,7 +3,7 @@ from torch import Tensor
 import time 
 from typing import Any 
 
-from .metric import compute_micro_f1, compute_macro_f1, compute_ap 
+from .metric import compute_micro_f1, compute_macro_f1, compute_ap, compute_acc 
 
 
 class SupervisedRecorder:
@@ -52,6 +52,8 @@ class SupervisedRecorder:
                     value = compute_macro_f1(logit_2d=logit_2d, label_1d=label_1d)  
                 elif metric == 'ap':
                     value = compute_ap(logit_2d=logit_2d, label_1d=label_1d) 
+                elif metric == 'acc':
+                    value = compute_acc(logit_2d=logit_2d, label_1d=label_1d) 
                 else:
                     raise ValueError 
                 
