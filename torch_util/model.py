@@ -234,6 +234,7 @@ class MLP(nn.Module):
         hidden_dim: int = -1,
         out_dim: int,
         num_layers: int,
+        bias: bool = True,
         is_last_layer: bool = True,
         batch_norm: bool = False,
         activation: str = 'relu',
@@ -255,6 +256,7 @@ class MLP(nn.Module):
                 Linear(
                     in_dim = in_dim,
                     out_dim = hidden_dim,
+                    bias = bias,
                     batch_norm = batch_norm,
                     activation = activation,
                     dropout = dropout,
@@ -263,6 +265,7 @@ class MLP(nn.Module):
                     Linear(
                         in_dim = hidden_dim,
                         out_dim = hidden_dim,
+                        bias = bias,
                         batch_norm = batch_norm,
                         activation = activation,
                         dropout = dropout,
@@ -272,6 +275,7 @@ class MLP(nn.Module):
                 Linear(
                     in_dim = hidden_dim,
                     out_dim = out_dim,
+                    bias = bias,
                     batch_norm = False if is_last_layer else batch_norm,
                     activation = 'none' if is_last_layer else activation,
                     dropout = 0. if is_last_layer else dropout,
@@ -282,6 +286,7 @@ class MLP(nn.Module):
                 Linear(
                     in_dim = in_dim,
                     out_dim = out_dim,
+                    bias = bias,
                     batch_norm = False if is_last_layer else batch_norm,
                     activation = 'none' if is_last_layer else activation,
                     dropout = 0. if is_last_layer else dropout,

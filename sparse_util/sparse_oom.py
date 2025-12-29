@@ -1,6 +1,5 @@
 import torch 
 from torch import Tensor 
-import torch_sparse 
 import warnings
 from typing import Any, Optional 
 
@@ -10,9 +9,8 @@ warnings.filterwarnings("ignore", message=".*Sparse CSR tensor support is in bet
 class SparseTensor:
     def __init__(
         self,
-        data: torch_sparse.SparseTensor,
+        data: Tensor,
     ):
-        assert isinstance(data, torch_sparse.SparseTensor)
         self.data = data 
         
         self.coalesce_()
@@ -41,10 +39,10 @@ class SparseTensor:
         else:
             edge_weight = torch.ones(num_edges, dtype=torch.float32, device=device)
         
-        data = torch_sparse.SparseTensor.from_edge_index(
-            edge_index = edge_index,
-            edge_attr = edge_weight,
-            sparse_sizes = num_nodes,
+        data = torch.sparse_coo_tensor(
+            indices = edge_index,
+            values = edge_weight,
+            size = num_nodes,
         )
 
         return cls(data=data)
@@ -64,7 +62,7 @@ class SparseTensor:
         cls,
         tensor: Tensor,
     ) -> 'SparseTensor':
-        return cls(data=torch_sparse.SparseTensor.from_dense(tensor))
+        return cls(data=tensor.to_sparse_coo())
     
     @classmethod 
     def diagonal(
@@ -92,90 +90,55 @@ class SparseTensor:
         diagonal = torch.ones(num_nodes, dtype=torch.float32, device=device)
 
         return cls.diagonal(diagonal=diagonal)
-    
-    @classmethod
-    def eye_like(
-        cls,
-        sparse_tensor: 'SparseTensor',
-    ) -> 'SparseTensor':
-        assert sparse_tensor.is_square
-
-        return cls.eye(
-            num_nodes = sparse_tensor.shape[0], 
-            device = sparse_tensor.device,
-        )
-    
-    @classmethod
-    def zeros_like(
-        cls,
-        sparse_tensor: 'SparseTensor',
-    ) -> 'SparseTensor':
-        return cls.from_edge_index(
-            edge_index = sparse_tensor.edge_index,
-            edge_weight = torch.zeros_like(sparse_tensor.value), 
-            num_nodes = sparse_tensor.num_nodes,
-        )
 
     def coalesce_(self) -> 'SparseTensor':
+        assert self.data.layout == torch.sparse_coo
+        assert self.data.ndim == 2 
+        
         self.data = self.data.coalesce()
+        assert self.data.indices().dtype == torch.int64
+        assert self.data.values().dtype == torch.float32
 
         return self 
     
     @property 
     def shape(self) -> tuple[int, int]:
-        n, m = self.data.sparse_sizes()
+        n, m = self.data.shape
         return n, m
 
     num_nodes = shape 
 
     @property 
-    def is_square(self) -> bool:
-        return self.shape[0] == self.shape[1]
-
-    @property 
     def nnz(self) -> int:
-        return self.data.nnz()
+        return self.data._nnz() 
     
     num_edges = nnz 
 
     @property 
     def density(self) -> float:
         return self.nnz / (self.shape[0] * self.shape[1])
-
-    @property 
-    def row(self) -> Tensor:
-        row = self.data.storage.row() 
-        assert row.shape == (self.nnz,)
-
-        return row 
-    
-    @property 
-    def col(self) -> Tensor:
-        col = self.data.storage.col() 
-        assert col.shape == (self.nnz,)
-
-        return col 
     
     @property
     def edge_index(self) -> Tensor:
-        edge_index = torch.stack([self.row, self.col], dim=0)
+        edge_index = self.data.indices()
         assert edge_index.shape == (2, self.nnz)
         
         return edge_index 
+
+    @property 
+    def row(self) -> Tensor:
+        return self.edge_index[0]
+    
+    @property 
+    def col(self) -> Tensor:
+        return self.edge_index[1]
     
     @property 
     def value(self) -> Tensor:
-        value = self.data.storage.value()
-        assert value is not None 
+        value = self.data.values()
         assert value.shape == (self.nnz,)
 
         return value 
-    
-    edge_weight = value
-    
-    @property 
-    def device(self) -> torch.device:
-        return self.data.device()
 
     def copy(self) -> 'SparseTensor':
         return SparseTensor(data=self.data.clone())
@@ -183,75 +146,62 @@ class SparseTensor:
     def to_dense(self) -> Tensor:
         return self.data.to_dense()
     
-    def matmul(
-        self,
-        other: 'SparseTensor | Tensor',
-    ) -> 'SparseTensor | Tensor':
-        if isinstance(other, SparseTensor):
-            result = self.data @ other.data
-
-            return SparseTensor(data=result)
-        elif isinstance(other, Tensor):
-            assert other.layout == torch.strided
-
-            result = self.data @ other 
-            assert result.layout == torch.strided
-
-            return result 
-        else:
-            raise TypeError
-    
-    def add(
+    def sparse_matmul(
         self,
         other: 'SparseTensor',
     ) -> 'SparseTensor':
-        return SparseTensor(data=self.data + other.data)
+        new_data = self.data @ other.data
+        assert new_data.layout == torch.sparse_coo
+
+        return SparseTensor(data=new_data)
     
-    def mul(
+    def dense_matmul(
         self,
-        other: 'SparseTensor | Tensor | float',
-    ) -> 'SparseTensor':
-        if isinstance(other, SparseTensor):
-            result = self.data * other.data
-        elif isinstance(other, Tensor):
-            assert other.layout == torch.strided
-            assert other.shape == (1, self.shape[1]) or other.shape == (self.shape[0], 1)
+        other: Tensor,
+    ) -> Tensor:
+        assert other.layout == torch.strided
 
-            result = self.data * other
-        elif isinstance(other, float):
-            result = self.data * other
-        else:
-            raise TypeError 
+        output = self.data @ other
+        assert output.layout == torch.strided 
 
-        return SparseTensor(data=result)
+        return output 
     
     def in_degree(self) -> Tensor:
-        degree = self.data.sum(dim=0) 
-        assert degree.layout == torch.strided
+        degree = self.data.sum(dim=0).to_dense()
         assert degree.shape == (self.shape[1],)
 
         return degree 
     
     def out_degree(self) -> Tensor:
-        degree = self.data.sum(dim=1)
-        assert degree.layout == torch.strided
+        degree = self.data.sum(dim=1).to_dense()
         assert degree.shape == (self.shape[0],)
 
         return degree 
+    
+    def mul_vec(
+        self,
+        other: Tensor,
+    ) -> 'SparseTensor':
+        assert other.layout == torch.strided
+        assert other.shape == (1, self.shape[1]) or other.shape == (self.shape[0], 1)
+
+        new_data = self.data * other
+
+        return SparseTensor(data=new_data)
     
     def row_normalize(self) -> 'SparseTensor':
         degree = self.out_degree().reshape(self.shape[0], 1)
         degree_inv = degree.pow(-1) 
         torch.nan_to_num_(degree_inv, nan=0., posinf=0., neginf=0.)
 
-        return self.mul(degree_inv)
+        return self.mul_vec(degree_inv)
 
     def col_normalize(self) -> 'SparseTensor':
         degree = self.in_degree().reshape(1, self.shape[1])
         degree_inv = degree.pow(-1) 
         torch.nan_to_num_(degree_inv, nan=0., posinf=0., neginf=0.)
 
-        return self.mul(degree_inv)
+        return self.mul_vec(degree_inv)
     
     def gcn_normalize(self) -> 'SparseTensor':
         in_degree = self.in_degree().reshape(1, self.shape[1])
@@ -261,56 +211,36 @@ class SparseTensor:
         torch.nan_to_num_(in_degree_inv_sqrt, nan=0., posinf=0., neginf=0.)
         torch.nan_to_num_(out_degree_inv_sqrt, nan=0., posinf=0., neginf=0.)
 
-        return self.mul(in_degree_inv_sqrt).mul(out_degree_inv_sqrt)
+        return self.mul_vec(in_degree_inv_sqrt).mul_vec(out_degree_inv_sqrt)
     
-    def exp(self) -> 'SparseTensor':
-        return SparseTensor.from_edge_index(
-            edge_index = self.edge_index,
-            num_nodes = self.num_nodes,
-            edge_weight = torch.exp(self.edge_weight),
-        )
-    
-    def row_softmax(self) -> 'SparseTensor':
-        return self.exp().row_normalize()
-    
-    def col_softmax(self) -> 'SparseTensor':
-        return self.exp().col_normalize()
-    
-    @classmethod 
-    def sum(
-        cls,
-        sparse_tensor_list: list['SparseTensor'],
-    ) -> 'SparseTensor':
-        sum_data = sparse_tensor_list[0].data
-
-        for sparse_tensor in sparse_tensor_list[1:]:
-           sum_data = sum_data + sparse_tensor.data
-
-        return cls(data=sum_data)
-
     @classmethod 
     def stack(
         cls,
         sparse_tensor_list: list['SparseTensor'],
     ) -> tuple[Tensor, Tensor]:
-        sum = cls.sum(sparse_tensor_list)
-        zero = cls.zeros_like(sum)  
-        edge_index = zero.edge_index
-        num_edges = zero.num_edges
+        _sum = sparse_tensor_list[0].data 
 
-        edge_weight_list = [] 
+        for sparse_tensor in sparse_tensor_list[1:]:
+            _sum = _sum + sparse_tensor.data
+            
+        zero = (_sum * 0.).coalesce()
+        edge_index = zero.indices()
+        num_edges = edge_index.shape[1]
+
+        value_list = [] 
 
         for sparse_tensor in sparse_tensor_list:
-            sparse_tensor = sparse_tensor.add(zero)
-            edge_weight = sparse_tensor.edge_weight
-            assert torch.all(sparse_tensor.edge_index == edge_index)
+            sparse_tensor = (sparse_tensor.data + zero).coalesce()
+            _edge_index = sparse_tensor.indices()
+            value = sparse_tensor.values()
+            assert torch.all(_edge_index == edge_index)
 
-            edge_weight_list.append(edge_weight) 
+            value_list.append(value) 
 
-        edge_weight_2d = torch.stack(edge_weight_list, dim=-1)
-        assert edge_weight_2d.shape == (num_edges, len(sparse_tensor_list))
+        value = torch.stack(value_list, dim=-1)
+        assert value.shape == (num_edges, len(sparse_tensor_list))
 
-        return edge_index, edge_weight_2d  
+        return edge_index, value 
 
     def __str__(self) -> str:
         return self.data.__str__()
