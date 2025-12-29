@@ -6,7 +6,12 @@ from typing import Any
 
 
 def get_pyg_data_num_nodes(data: Any) -> int:
-    return int(data['num_nodes'])
+    if 'num_nodes' in data:
+        return int(data['num_nodes'])
+    elif 'x' in data:
+        return len(data['x']) 
+    else:
+        raise ValueError
 
 
 def get_pyg_data_node_feat(data: Any) -> Tensor:
@@ -132,3 +137,23 @@ def get_pyg_data_node_test_mask(data: Any) -> Tensor:
     assert node_test_mask.shape == (num_nodes,) 
 
     return node_test_mask
+
+
+def get_pyg_data_dense_adj_mat(data: Any) -> Tensor: 
+    num_nodes = int(data['num_nodes'])
+    edge_index = data['edge_index']
+    num_edges = edge_index.shape[1]
+    assert edge_index.shape == (2, num_edges)
+    device = edge_index.device
+
+    adj_mat = torch.sparse_coo_tensor(
+        indices = edge_index,
+        values = torch.ones(num_edges, dtype=torch.float32, device=device),
+        size = (num_nodes, num_nodes),
+    )
+
+    adj_mat_dense = adj_mat.to_dense()
+    assert adj_mat_dense.layout == torch.strided
+    assert adj_mat_dense.shape == (num_nodes, num_nodes)
+
+    return adj_mat_dense 

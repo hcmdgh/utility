@@ -34,6 +34,7 @@ def print_gpu_and_memory_usage():
     memory_info = process.memory_info()
     memory = f"{memory_info.rss / 1024 / 1024 / 1024:.3f}GB"
 
+    print() 
     print(f"GPU usage: {cuda_max_memory_allocated_dict}")
     print(f"Memory usage: {memory}")
     print() 

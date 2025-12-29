@@ -14,6 +14,11 @@ class SparseTensor:
     ):
         assert isinstance(data, torch_sparse.SparseTensor)
         self.data = data 
+
+        assert len(self.data.sizes()) == 2 
+        row, col, value = self.data.coo()
+        assert row.dtype == col.dtype == torch.int64  
+        assert value is not None and value.dtype == torch.float32 and value.ndim == 1 
         
         self.coalesce_()
 
@@ -54,9 +59,16 @@ class SparseTensor:
         cls,
         data: Any,
     ) -> 'SparseTensor':
+        if 'num_nodes' in data:
+            num_nodes = int(data['num_nodes'])
+        elif 'x' in data:
+            num_nodes = len(data['x']) 
+        else:
+            raise ValueError
+
         return cls.from_edge_index(
             edge_index = data['edge_index'],
-            num_nodes = data['num_nodes'],
+            num_nodes = num_nodes,
         )
     
     @classmethod 
@@ -185,14 +197,15 @@ class SparseTensor:
     
     def matmul(
         self,
-        other: 'SparseTensor | Tensor',
-    ) -> 'SparseTensor | Tensor':
+        other: Any,
+    ) -> Any:
         if isinstance(other, SparseTensor):
             result = self.data @ other.data
 
             return SparseTensor(data=result)
         elif isinstance(other, Tensor):
             assert other.layout == torch.strided
+            assert other.ndim == 2 
 
             result = self.data @ other 
             assert result.layout == torch.strided
@@ -209,7 +222,7 @@ class SparseTensor:
     
     def mul(
         self,
-        other: 'SparseTensor | Tensor | float',
+        other: Any,
     ) -> 'SparseTensor':
         if isinstance(other, SparseTensor):
             result = self.data * other.data
@@ -240,18 +253,20 @@ class SparseTensor:
         return degree 
     
     def row_normalize(self) -> 'SparseTensor':
-        degree = self.out_degree().reshape(self.shape[0], 1)
+        relu = self.relu()
+        degree = relu.out_degree().reshape(relu.shape[0], 1)
         degree_inv = degree.pow(-1) 
         torch.nan_to_num_(degree_inv, nan=0., posinf=0., neginf=0.)
 
-        return self.mul(degree_inv)
+        return relu.mul(degree_inv)
 
     def col_normalize(self) -> 'SparseTensor':
-        degree = self.in_degree().reshape(1, self.shape[1])
+        relu = self.relu()
+        degree = relu.in_degree().reshape(1, relu.shape[1])
         degree_inv = degree.pow(-1) 
         torch.nan_to_num_(degree_inv, nan=0., posinf=0., neginf=0.)
 
-        return self.mul(degree_inv)
+        return relu.mul(degree_inv)
     
     def gcn_normalize(self) -> 'SparseTensor':
         in_degree = self.in_degree().reshape(1, self.shape[1])
@@ -264,11 +279,20 @@ class SparseTensor:
         return self.mul(in_degree_inv_sqrt).mul(out_degree_inv_sqrt)
     
     def exp(self) -> 'SparseTensor':
-        return SparseTensor.from_edge_index(
-            edge_index = self.edge_index,
-            num_nodes = self.num_nodes,
-            edge_weight = torch.exp(self.edge_weight),
-        )
+        data = self.data 
+        value = self.value 
+        value = torch.exp(value)
+        data = data.set_value(value, layout='coo')
+
+        return SparseTensor(data=data)
+    
+    def relu(self) -> 'SparseTensor':
+        data = self.data 
+        value = self.value 
+        value = torch.relu(value)
+        data = data.set_value(value, layout='coo')
+
+        return SparseTensor(data=data)
     
     def row_softmax(self) -> 'SparseTensor':
         return self.exp().row_normalize()

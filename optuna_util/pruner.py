@@ -20,10 +20,10 @@ class RepeatParamPruner(optuna.pruners.BasePruner):
             return False
 
         trial_list = study.get_trials(deepcopy=False)
-        other_trial_list = [t for t in trial_list if t.number != trial.number]
-        other_trial_params_list = [t.params for t in other_trial_list]
+        existing_trial_list = [t for t in trial_list if t.number < trial.number]
+        existing_trial_params_list = [t.params for t in existing_trial_list]
 
-        if trial.params in other_trial_params_list:
+        if trial.params in existing_trial_params_list:
             return True
         else:
             return False

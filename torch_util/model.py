@@ -97,15 +97,15 @@ class Linear(nn.Module):
         batch_size = len(input_2d)
         assert input_2d.shape == (batch_size, self.in_dim)
         
-        out_2d = self.linear(input_2d)
-        assert out_2d.shape == (batch_size, self.out_dim)
+        output_2d = self.linear(input_2d)
+        assert output_2d.shape == (batch_size, self.out_dim)
 
-        out_2d = self.batch_norm(out_2d)
-        out_2d = self.activation(out_2d)
-        out_2d = self.dropout(out_2d)
-        assert out_2d.shape == (batch_size, self.out_dim) 
+        output_2d = self.batch_norm(output_2d)
+        output_2d = self.activation(output_2d)
+        output_2d = self.dropout(output_2d)
+        assert output_2d.shape == (batch_size, self.out_dim) 
         
-        return out_2d
+        return output_2d
     
 
 class NonLinear(nn.Module):
