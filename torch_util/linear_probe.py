@@ -4,6 +4,7 @@ from torch import Tensor
 from typing import Optional, Any 
 from tqdm import tqdm  
 
+from .model import MLP 
 from .supervised_recorder import SupervisedRecorder 
 from .loss import compute_cross_entropy_loss 
 
@@ -17,9 +18,10 @@ def run_linear_probe(
     test_label_1d: Tensor,
     main_metric: str,
     metrics: list[str],
+    num_layers: int,
     lr: float = 0.001,
     num_epochs: int = 1000,
-    early_stopping_patience: int = 20,
+    early_stopping_patience: int = 30,
     use_tqdm: bool = False,
 ) -> dict[str, Any]:
     train_size = len(train_embedding_2d)
@@ -45,7 +47,12 @@ def run_linear_probe(
     device = train_embedding_2d.device 
     out_dim = int(torch.cat([train_label_1d, val_label_1d, test_label_1d]).max() + 1)
     
-    model = nn.Linear(feat_dim, out_dim).to(device)
+    model = MLP(
+        in_dim = feat_dim, 
+        hidden_dim = feat_dim,
+        out_dim = out_dim,
+        num_layers = num_layers,
+    ).to(device)
     
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 

@@ -11,6 +11,7 @@ class UnsupervisedRecorder:
         self, 
         main_metric: str,
         metrics: list[str],
+        linear_probe_num_layers: int,
         linear_probe_lr: float,
         linear_probe_num_epochs: int,
         early_stopping_patience: int,
@@ -18,6 +19,7 @@ class UnsupervisedRecorder:
     ):
         self.main_metric = main_metric 
         self.metrics = metrics 
+        self.linear_probe_num_layers = linear_probe_num_layers 
         self.linear_probe_lr = linear_probe_lr
         self.linear_probe_num_epochs = linear_probe_num_epochs
         self.early_stopping_patience = early_stopping_patience
@@ -60,6 +62,7 @@ class UnsupervisedRecorder:
             test_label_1d = test_label_1d,
             main_metric = self.main_metric,
             metrics = self.metrics,
+            num_layers = self.linear_probe_num_layers,
             lr = self.linear_probe_lr,
             num_epochs = self.linear_probe_num_epochs,
         )
