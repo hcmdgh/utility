@@ -1,111 +1,130 @@
 import torch 
 from torch import Tensor 
-from sklearn.metrics import roc_auc_score, average_precision_score, f1_score
+import torchmetrics.functional.classification as F
 
 
-def compute_auc(
-    logit_2d: Tensor,
-    label_1d: Tensor,
+def compute_binary_auc(
+    input: Tensor,
+    target: Tensor,
 ) -> float:
-    batch_size = len(logit_2d)
-    assert logit_2d.dtype == torch.float32 and label_1d.dtype == torch.int64 
-    assert logit_2d.shape == (batch_size, 2)
-    assert label_1d.shape == (batch_size,) 
-    assert torch.all(label_1d >= 0) and torch.all(label_1d <= 1)
-    logit_2d = logit_2d.detach()
+    if input.ndim == 2:
+        assert input.shape[1] == 2 
+        input = torch.softmax(input, dim=-1)[:, 1]
 
-    torch.nan_to_num_(logit_2d, nan=0., posinf=0., neginf=0.)
+    batch_size, = input.shape 
+    assert target.shape == (batch_size,) 
+    input = input.detach()
 
-    logit_2d = torch.softmax(logit_2d, dim=-1)
-    logit_1d = logit_2d[:, 1]
-    assert logit_1d.shape == (batch_size,)
-
-    auc = roc_auc_score(
-        y_true = label_1d.cpu().numpy(), 
-        y_score = logit_1d.cpu().numpy(), 
+    auc = F.binary_auroc(
+        preds = input,
+        target = target, 
     )
 
     return float(auc)
 
 
-def compute_acc(
-    logit_2d: Tensor,
-    label_1d: Tensor,
+def compute_binary_ap(
+    input: Tensor,
+    target: Tensor,
 ) -> float:
-    batch_size, num_classes = logit_2d.shape 
-    assert logit_2d.dtype == torch.float32 and label_1d.dtype == torch.int64 
-    assert label_1d.shape == (batch_size,) 
-    logit_2d = logit_2d.detach() 
+    if input.ndim == 2:
+        assert input.shape[1] == 2 
+        input = torch.softmax(input, dim=-1)[:, 1]
 
-    torch.nan_to_num_(logit_2d, nan=0., posinf=0., neginf=0.)
+    batch_size, = input.shape 
+    assert target.shape == (batch_size,) 
+    input = input.detach()
 
-    pred_1d = torch.argmax(logit_2d, dim=-1)
-    assert pred_1d.shape == (batch_size,)
-
-    acc = (pred_1d == label_1d).float().mean() 
-
-    return float(acc)
-
-
-def compute_ap(
-    logit_2d: Tensor,
-    label_1d: Tensor,
-    error_return_negative_one: bool = False, 
-) -> float:
-    batch_size, num_classes = logit_2d.shape 
-    logit_2d = logit_2d.detach()
-
-    if num_classes > 2:
-        if error_return_negative_one:
-            return -1.
-        else:
-            raise ValueError 
-
-    assert logit_2d.dtype == torch.float32 and label_1d.dtype == torch.int64 
-    assert num_classes == 2 
-    assert label_1d.shape == (batch_size,) 
-    assert torch.all(label_1d >= 0) and torch.all(label_1d <= 1)
-
-    torch.nan_to_num_(logit_2d, nan=0., posinf=0., neginf=0.)
-
-    logit_2d = torch.softmax(logit_2d, dim=-1)
-    logit_1d = logit_2d[:, 1]
-    assert logit_1d.shape == (batch_size,)
-
-    ap = average_precision_score(
-        y_true = label_1d.cpu().numpy(), 
-        y_score = logit_1d.cpu().numpy(), 
+    ap = F.binary_average_precision(
+        preds = input,
+        target = target, 
     )
 
     return float(ap)
 
 
-def compute_micro_f1(
-    logit_2d: Tensor,
-    label_1d: Tensor,
+def compute_multiclass_acc(
+    input: Tensor,
+    target: Tensor,
 ) -> float:
-    return compute_acc(
-        logit_2d = logit_2d,
-        label_1d = label_1d,
+    batch_size, num_classes = input.shape  
+    assert target.shape == (batch_size,) 
+    input = input.detach() 
+
+    acc = F.multiclass_accuracy(
+        preds = input,
+        target = target,
     )
 
+    return float(acc)
 
-def compute_macro_f1(
-    logit_2d: Tensor,
-    label_1d: Tensor,
+
+def compute_multiclass_micro_f1(
+    input: Tensor,
+    target: Tensor,
 ) -> float:
-    batch_size, num_classes = logit_2d.shape 
-    assert logit_2d.dtype == torch.float32 and label_1d.dtype == torch.int64 
-    assert label_1d.shape == (batch_size,) 
-    logit_2d = logit_2d.detach()
+    batch_size, num_classes = input.shape  
+    assert target.shape == (batch_size,) 
+    input = input.detach() 
 
-    pred_1d = torch.argmax(logit_2d, dim=-1)
-    assert pred_1d.shape == (batch_size,)
+    f1 = F.multiclass_f1_score(
+        preds = input,
+        target = target,
+        num_classes = num_classes,
+        average = 'micro',
+    )
 
-    macro_f1 = f1_score(
-        y_true = label_1d.detach().cpu().numpy(),
-        y_pred = pred_1d.detach().cpu().numpy(), 
+    return float(f1)
+
+
+def compute_multiclass_macro_f1(
+    input: Tensor,
+    target: Tensor,
+) -> float:
+    batch_size, num_classes = input.shape  
+    assert target.shape == (batch_size,) 
+    input = input.detach() 
+
+    f1 = F.multiclass_f1_score(
+        preds = input,
+        target = target,
+        num_classes = num_classes,
         average = 'macro',
     )
 
-    return float(macro_f1)
+    return float(f1)
+
+
+def compute_train_val_test_metrics(
+    metric_list: list[str],
+    train_input: Tensor,
+    train_target: Tensor,
+    val_input: Tensor,
+    val_target: Tensor,
+    test_input: Tensor,
+    test_target: Tensor,
+) -> dict[str, float]:
+    metric_dict = dict() 
+
+    for metric in metric_list:
+        if metric == 'binary_auc':
+            metric_func = compute_binary_auc
+        elif metric == 'binary_ap':
+            metric_func = compute_binary_ap
+        elif metric == 'multiclass_acc':
+            metric_func = compute_multiclass_acc
+        elif metric == 'multiclass_micro_f1':
+            metric_func = compute_multiclass_micro_f1
+        elif metric == 'multiclass_macro_f1':
+            metric_func = compute_multiclass_macro_f1
+        else:
+            raise ValueError 
+        
+        train_metric = metric_func(input=train_input, target=train_target)
+        val_metric = metric_func(input=val_input, target=val_target)
+        test_metric = metric_func(input=test_input, target=test_target)
+        metric_dict[f'train_{metric}'] = train_metric
+        metric_dict[f'val_{metric}'] = val_metric
+        metric_dict[f'test_{metric}'] = test_metric
+        
+    return metric_dict 

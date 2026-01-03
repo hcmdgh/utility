@@ -39,6 +39,7 @@ def run_bash_cmd(
     verbose: bool = True,
     capture_stdout_stderr: bool = False,
     exit_on_error: bool = True,
+    discard_stdout: bool = False,
 ) -> tuple[int, str]:
     cmd = [str(item) for item in cmd]
 
@@ -56,7 +57,11 @@ def run_bash_cmd(
 
     if log_path:
         os.makedirs(os.path.dirname(log_path), exist_ok=True)
-        cmd_str += ' 2>&1 | tee ' + shlex.quote(log_path)  
+
+        if not discard_stdout:
+            cmd_str += ' 2>&1 | tee ' + shlex.quote(log_path)  
+        else:
+            cmd_str += ' 2>&1 1>/dev/null | tee ' + shlex.quote(log_path)
 
     process = subprocess.Popen(
         ['/bin/bash', '-c', cmd_str],
@@ -100,6 +105,7 @@ def run_python(
     env: Optional[dict[str, Any]] = None,
     log_path: Optional[str] = None,
     exit_on_error: bool = True,
+    discard_stdout: bool = False,
 ):
     if not module:
         cmd = ['python3', '-u']
@@ -128,6 +134,7 @@ def run_python(
         env = env,
         log_path = log_path,
         exit_on_error = exit_on_error,
+        discard_stdout = discard_stdout,
     )
 
 

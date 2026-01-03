@@ -5,7 +5,6 @@ from typing import Optional, Any
 from tqdm import tqdm  
 
 from .model import MLP 
-from .supervised_recorder import SupervisedRecorder 
 from .loss import compute_cross_entropy_loss 
 
 
@@ -68,7 +67,7 @@ def run_linear_probe(
 
         train_logit_2d = model(train_embedding_2d)
         
-        train_loss = compute_cross_entropy_loss(logit_2d=train_logit_2d, label_1d=train_label_1d)
+        train_loss = compute_cross_entropy_loss(input=train_logit_2d, target=train_label_1d)
 
         optimizer.zero_grad()
         train_loss.backward()

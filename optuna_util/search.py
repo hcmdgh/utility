@@ -10,8 +10,7 @@ from typing import Callable, Optional
 
 from .search_space import SearchSpace, CategoricalSearchSpace, IntSearchSpace
 from .sampler import create_sampler 
-from .pruner import RepeatParamPruner
-from .study import count_completed_trials, optimize_callback_func
+from .study import check_study_completed, is_trial_duplicated
 
 
 def _objective_func(
@@ -31,6 +30,9 @@ def _objective_func(
             param_dict[param_name] = search_space 
 
     try:
+        if is_trial_duplicated(trial=trial):
+            raise optuna.TrialPruned 
+
         objective_value, other_result_dict = trial_func(
             trial = trial, 
             device_id = device_id,
@@ -78,8 +80,6 @@ def start_optuna_search(
 
     sampler_obj = create_sampler(sampler, search_space=grid_search_space)
 
-    pruner = RepeatParamPruner(sampler=sampler)
-
     device_queue = Queue() 
 
     for device_id in device_ids:
@@ -90,7 +90,6 @@ def start_optuna_search(
     study = optuna.create_study(
         study_name = study_name,
         sampler = sampler_obj,
-        pruner = pruner,
         # storage = JournalStorage(JournalFileBackend(os.path.join(output_dir, 'storage.log'))),
         storage = storage_uri,
         direction = optimize_direction,
@@ -111,7 +110,7 @@ def start_optuna_search(
         n_jobs = len(device_ids),
         callbacks = [
             partial(
-                optimize_callback_func,
+                check_study_completed,
                 num_trials = num_trials,
             )
         ],

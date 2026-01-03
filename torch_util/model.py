@@ -6,8 +6,6 @@ from torch.nn.attention import SDPBackend, sdpa_kernel
 from tqdm.auto import tqdm 
 from typing import Any 
 
-from .metric import compute_acc, compute_ap 
-
 
 class BatchNorm(nn.Module):
     def __init__(
@@ -139,6 +137,7 @@ class NonLinearWithResidual(nn.Module):
     def __init__(
         self,
         in_dim: int,
+        residual_in_dim: int,
         batch_norm: bool = False,
         activation: str = 'relu',
         dropout: float = 0.,
@@ -156,72 +155,85 @@ class NonLinearWithResidual(nn.Module):
 
         self.dropout = nn.Dropout(dropout)
 
-        self.residual = Residual(mode=residual_type, dim=in_dim)
+        self.residual = Residual(
+            in_dim = in_dim,
+            residual_in_dim = residual_in_dim,
+            mode = residual_type,
+        )
 
     def forward(
         self,
-        input_2d: Tensor,
-        output_2d: Tensor,
+        input: Tensor,
+        residual_input: Tensor,
     ) -> Tensor:
         if self.residual_position == 'before':
-            _output_2d = self.residual(input_2d=input_2d, output_2d=output_2d)
-            _output_2d = self.batch_norm(_output_2d)
-            _output_2d = self.activation(_output_2d)
-            _output_2d = self.dropout(_output_2d)
+            output = self.residual(input=input, residual_input=residual_input)
+            output = self.batch_norm(output)
+            output = self.activation(output)
+            output = self.dropout(output)
         elif self.residual_position == 'after':
-            _output_2d = self.batch_norm(output_2d)
-            _output_2d = self.activation(_output_2d)
-            _output_2d = self.dropout(_output_2d)
-            _output_2d = self.residual(input_2d=input_2d, output_2d=_output_2d)
+            output = self.batch_norm(input)
+            output = self.activation(output)
+            output = self.dropout(output)
+            output = self.residual(input=output, residual_input=residual_input)
         else:
             raise ValueError
 
-        return _output_2d
+        return output
     
 
 class Residual(nn.Module):
     def __init__(
         self,
+        in_dim: int,
+        residual_in_dim: int,
         mode: str,
-        dim: int,
     ):
         super().__init__()
         
+        self.in_dim = in_dim
+        self.residual_in_dim = residual_in_dim
         self.mode = mode
-        self.dim = dim
         
         if mode == 'none':
             self.linear = None
         elif mode == 'add':
+            assert residual_in_dim == in_dim
             self.linear = None
         elif mode == 'lin_add':
-            self.linear = nn.Linear(dim, dim)
-        elif mode in ['concat_lin', 'concat_lin_add']:
-            self.linear = nn.Linear(dim * 2, dim)
+            self.linear = nn.Linear(residual_in_dim, in_dim)
+        elif mode == 'concat_lin':
+            self.linear = nn.Linear(in_dim + residual_in_dim, in_dim)
+        elif mode == 'concat_lin_add':
+            assert residual_in_dim == in_dim
+            self.linear = nn.Linear(in_dim * 2, in_dim)
         else:
             raise ValueError
         
     def forward(
         self,
-        input_2d: Tensor,
-        output_2d: Tensor,
+        input: Tensor,
+        residual_input: Tensor,
     ) -> Tensor:
-        assert input_2d.ndim == 2
-        assert output_2d.shape == input_2d.shape 
+        batch_size = len(input) 
+        assert input.shape == (batch_size, self.in_dim) 
+        assert residual_input.shape == (batch_size, self.residual_in_dim)  
         
         if self.mode == 'none':
-            return output_2d
+            return input
         elif self.mode == 'add':
-            return output_2d + input_2d
+            assert self.residual_in_dim == self.in_dim
+            return input + residual_input
         elif self.mode == 'lin_add':
             assert self.linear
-            return output_2d + self.linear(input_2d)
+            return input + self.linear(residual_input)
         elif self.mode == 'concat_lin':
             assert self.linear
-            return self.linear(torch.cat([output_2d, input_2d], dim=-1))
+            return self.linear(torch.cat([input, residual_input], dim=-1))
         elif self.mode == 'concat_lin_add':
             assert self.linear
-            return self.linear(torch.cat([output_2d, input_2d], dim=-1)) + input_2d 
+            assert self.residual_in_dim == self.in_dim
+            return self.linear(torch.cat([input, residual_input], dim=-1)) + residual_input 
         else:
             raise ValueError
     
