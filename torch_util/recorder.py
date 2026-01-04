@@ -12,9 +12,9 @@ class Recorder:
         self, 
         main_metric: str,
         early_stopping_patience: int,
+        output_dir: str,
         optimize_direction: str = 'maximize',
         mute: bool = False,
-        output_dir: str = '',
     ):
         self.main_metric = main_metric 
         self.early_stopping_patience = early_stopping_patience
