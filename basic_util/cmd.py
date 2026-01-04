@@ -57,11 +57,7 @@ def run_bash_cmd(
 
     if log_path:
         os.makedirs(os.path.dirname(log_path), exist_ok=True)
-
-        if not discard_stdout:
-            cmd_str += ' 2>&1 | tee ' + shlex.quote(log_path)  
-        else:
-            cmd_str += ' 2>&1 1>/dev/null | tee ' + shlex.quote(log_path)
+        cmd_str += ' 2>&1 | tee ' + shlex.quote(log_path)  
 
     process = subprocess.Popen(
         ['/bin/bash', '-c', cmd_str],
@@ -81,8 +77,9 @@ def run_bash_cmd(
             break
         
         if line:
-            sys.stdout.write(line)
-            sys.stdout.flush()
+            if not discard_stdout:
+                sys.stdout.write(line)
+                sys.stdout.flush()
 
             if capture_stdout_stderr:
                 stdout_stderr_text += line 

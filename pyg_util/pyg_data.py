@@ -1,5 +1,6 @@
 import torch 
 from torch import Tensor 
+import torch_geometric.utils as pyg_util 
 from typing import Any 
 
 
@@ -54,6 +55,8 @@ class PyGDataWrapper:
     @property 
     def node_or_graph_label(self) -> Tensor:
         return self.data['y']
+    
+    node_label = node_or_graph_label
 
     @property
     def node_or_graph_num_classes(self) -> int:
@@ -61,6 +64,8 @@ class PyGDataWrapper:
         assert node_or_graph_label.dtype == torch.int64 and node_or_graph_label.ndim == 1 
 
         return int(node_or_graph_label.max()) + 1
+
+    node_num_classes = node_or_graph_num_classes
     
     @property 
     def graph_ptr(self) -> Tensor:
@@ -97,3 +102,11 @@ class PyGDataWrapper:
         assert adj_mat_dense.shape == (self.num_nodes, self.num_nodes)
 
         return adj_mat_dense 
+
+    def add_self_loop_(self) -> 'PyGDataWrapper':
+        self.data.edge_index, _ = pyg_util.add_remaining_self_loops(
+            edge_index = self.data.edge_index,
+            num_nodes = int(self.data.num_nodes),
+        )
+
+        return self 

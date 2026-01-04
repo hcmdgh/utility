@@ -1,6 +1,9 @@
 import torch 
 from torch import Tensor 
+from sklearn.preprocessing import StandardScaler
 from typing import Any
+
+from .pyg_data import PyGDataWrapper
 
 
 class PyGHeteroDataWrapper:
@@ -139,3 +142,22 @@ class PyGHeteroDataWrapper:
         ]
 
         return complete_metapath_list 
+
+    def to_homo_graph(self) -> PyGDataWrapper:
+        graph = self.hetero_data.to_homogeneous()
+
+        return PyGDataWrapper(graph)
+
+    def normalize_node_feat_(self) -> 'PyGHeteroDataWrapper':
+        for node_type, node_feat in self.node_feat_dict.items():
+            device = node_feat.device 
+            num_nodes, node_feat_dim = node_feat.shape 
+            
+            scaler = StandardScaler()
+            normed_node_feat = scaler.fit_transform(node_feat.cpu().numpy())
+            normed_node_feat = torch.tensor(normed_node_feat, dtype=torch.float32, device=device)
+            assert normed_node_feat.shape == (num_nodes, node_feat_dim)
+
+            self.hetero_data[node_type].x = normed_node_feat 
+
+        return self 

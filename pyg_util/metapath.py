@@ -7,8 +7,6 @@ import random
 from tqdm.auto import tqdm 
 from typing import Optional
 
-from .hetero_graph import * 
-
 
 def extract_metapath_subgraphs(
     graph: HeteroData,
