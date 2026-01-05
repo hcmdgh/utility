@@ -1,63 +1,55 @@
 import torch
 from torch import Tensor
-from torch_geometric.data import HeteroData
-from torch_geometric.utils import add_remaining_self_loops
-from torch_sparse import matmul
 import random 
 from tqdm.auto import tqdm 
 from typing import Optional
 
+import sparse_util 
+
 
 def extract_metapath_subgraphs(
-    graph: HeteroData,
+    edge_index_dict: dict[tuple[str, str, str], Tensor],
+    num_nodes_dict: dict[str, int],
     metapath_list: list[list[str]],
 ) -> list[Tensor]:
-    edge_index_2d_dict = get_hetero_graph_edge_index_dict(graph)
-    num_nodes_dict = get_hetero_graph_num_nodes_dict(graph)
-
     short_etype_2_etype = {
         edge_type[1]: edge_type
-        for edge_type in edge_index_2d_dict.keys()
+        for edge_type in edge_index_dict.keys()
     }
-    assert len(short_etype_2_etype) == len(edge_index_2d_dict) 
+    assert len(short_etype_2_etype) == len(edge_index_dict) 
 
-    subgraph_edge_index_2d_list = []
+    subgraph_edge_index_list = []
     
     for metapath in metapath_list:
-        adj_mat_prod_2d = None 
+        adj_mat_prod = None 
         
         for edge_type in metapath:
             edge_type = short_etype_2_etype[edge_type]
-            src_ntype, _, tgt_ntype = edge_type
-            num_src_nodes = num_nodes_dict[src_ntype]
-            num_dst_nodes = num_nodes_dict[tgt_ntype]
-            edge_index_2d = edge_index_2d_dict[edge_type]
+            src_node_type, _, dst_node_type = edge_type
+            num_src_nodes = num_nodes_dict[src_node_type]
+            num_dst_nodes = num_nodes_dict[dst_node_type]
+            edge_index = edge_index_dict[edge_type]
             
-            adj_mat_2d = torch.sparse_coo_tensor(
-                indices = edge_index_2d,
-                values = torch.ones(edge_index_2d.shape[1], device=edge_index_2d.device),
-                size = (num_src_nodes, num_dst_nodes),
+            adj_mat = sparse_util.SparseTensor.from_edge_index(
+                edge_index = edge_index,
+                num_nodes = (num_src_nodes, num_dst_nodes),
             )
-            assert adj_mat_2d.shape == (num_src_nodes, num_dst_nodes)
+            adj_mat = adj_mat.row_normalize()
             
-            if adj_mat_prod_2d is None:
-                adj_mat_prod_2d = adj_mat_2d
+            if adj_mat_prod is None:
+                adj_mat_prod = adj_mat
             else:
-                adj_mat_prod_2d = adj_mat_prod_2d @ adj_mat_2d
+                adj_mat_prod = adj_mat_prod.matmul(adj_mat)
                 
-        assert adj_mat_prod_2d is not None 
-        adj_mat_prod_2d = adj_mat_prod_2d.coalesce()
-        
-        edge_index_2d = adj_mat_prod_2d.indices() 
-        assert edge_index_2d.ndim == 2 and edge_index_2d.shape[0] == 2 
-        
-        subgraph_edge_index_2d_list.append(edge_index_2d)
+        assert adj_mat_prod is not None 
+        edge_index = adj_mat_prod.edge_index 
+        subgraph_edge_index_list.append(edge_index)
     
-    return subgraph_edge_index_2d_list
+    return subgraph_edge_index_list
 
 
 def propagate_along_metapaths(
-    graph: HeteroData,
+    graph,
     metapath_list: list[list[str]],
     normalize_adj_mat: bool = True, 
 ) -> Tensor:
