@@ -18,6 +18,7 @@ def _objective_func(
     trial_func: Callable,
     search_space_dict: dict,
     device_queue: Queue[int],
+    prune_duplicated: bool,
 ) -> float:
     device_id = device_queue.get()
 
@@ -30,7 +31,7 @@ def _objective_func(
             param_dict[param_name] = search_space 
 
     try:
-        if is_trial_duplicated(trial=trial):
+        if prune_duplicated and is_trial_duplicated(trial=trial):
             raise optuna.TrialPruned 
 
         objective_value, other_result_dict = trial_func(
@@ -96,7 +97,11 @@ def start_optuna_search(
         load_if_exists = True,
     )
 
+    prune_duplicated = True 
+
     if isinstance(sampler_obj, optuna.samplers.GridSampler):
+        prune_duplicated = False 
+
         if sampler_obj.is_exhausted(study=study):
             return 
         
@@ -106,6 +111,7 @@ def start_optuna_search(
             trial_func = trial_func,
             search_space_dict = search_space_dict,
             device_queue = device_queue,
+            prune_duplicated = prune_duplicated,
         ),
         n_jobs = len(device_ids),
         callbacks = [
